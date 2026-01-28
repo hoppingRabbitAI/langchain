@@ -1,6 +1,13 @@
+import os
+import sys
 import pytest
 from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
 from main import app
 from app.services.kling_client import get_kling_client, KlingClient
 from tests.mock_kling_response import (

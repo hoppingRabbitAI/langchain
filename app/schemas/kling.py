@@ -60,6 +60,13 @@ class CameraControlConfig(BaseModel):
     roll: float = Field(0, ge=-10, le=10)
     zoom: float = Field(0, ge=-10, le=10)
 
+    @model_validator(mode='after')
+    def check_at_least_one_nonzero(self):
+        # Check if all fields are 0
+        if all(getattr(self, field) == 0 for field in self.model_fields):
+            raise ValueError("camera_control.config must have at least one non-zero field")
+        return self
+
 class CameraControl(BaseModel):
     type: CameraControlType
     config: Optional[CameraControlConfig] = None

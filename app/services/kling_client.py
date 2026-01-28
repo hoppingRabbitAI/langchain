@@ -1,37 +1,90 @@
 import httpx
 import os
+import time
+import jwt
 from typing import Any, Dict, Optional
 
 class KlingClient:
-    BASE_URL = "https://api.klingai.com/v1"
+    # Default global BASE_URL. 
+    # NOTE: If using Beijing node, set BASE_URL=https://api-beijing.klingai.com in .env (without /v1)
+    # The client will append /v1 automatically or expect the user to provide the full base URL.
+    # Based on the user's successful demo, the base URL is https://api-beijing.klingai.com
+    # and endpoints are like /v1/videos/text2video.
+    DEFAULT_BASE_URL = "https://api.klingai.com"
 
-    def __init__(self, api_token: Optional[str] = None):
-        self.api_token = api_token or os.getenv("KLING_AI_API_TOKEN")
+    def __init__(self, access_key: Optional[str] = None, secret_key: Optional[str] = None, base_url: Optional[str] = None):
+        self.ak = access_key or os.getenv("KLING_ACCESS_KEY")
+        self.sk = secret_key or os.getenv("KLING_SECRET_KEY")
+        
+        # Fallback to single token if AK/SK not provided (though AK/SK is recommended)
+        self.static_token = os.getenv("KLING_AI_API_TOKEN")
+
+        # Handle Base URL: ensure no trailing slash, and don't include /v1 yet if we want flexibility
+        # But to match existing code logic, let's assume BASE_URL includes /v1 or we append it.
+        # However, the user's demo uses `https://api-beijing.klingai.com` as base, and appends `/v1/...`
+        # Our existing code uses `httpx.AsyncClient(base_url=...)` and then requests `/videos/...`.
+        # So if base_url is `.../v1`, requesting `/videos/...` works.
+        # If base_url is `.../`, requesting `/v1/videos/...` works.
+        
+        env_base_url = os.getenv("BASE_URL", self.DEFAULT_BASE_URL)
+        self.base_url = base_url or env_base_url
+        
+        # Ensure base_url ends with /v1 to match our existing relative paths like "/videos/text2video"
+        # OR we change all relative paths to include /v1.
+        # Let's standardise: Base URL is the host. We append /v1 in requests OR Base URL includes /v1.
+        # The user's error showed: POST https://api-beijing.klingai.com/videos/text2video -> 404.
+        # This confirms that `https://api-beijing.klingai.com` requires `/v1` prefix.
+        
+        if not self.base_url.endswith("/v1"):
+            self.base_url = f"{self.base_url}/v1"
+
         self.headers = {
             "Content-Type": "application/json",
         }
-        if self.api_token:
-            self.headers["Authorization"] = f"Bearer {self.api_token}"
         
-        # Initialize client with timeout
         self.client = httpx.AsyncClient(
-            base_url=self.BASE_URL, 
+            base_url=self.base_url, 
             headers=self.headers, 
-            timeout=120.0 # Generative AI tasks might take time to submit or acknowledge? Usually submission is fast.
+            timeout=120.0
         )
+
+    def _get_token(self) -> str:
+        """
+        Generates JWT token dynamically if AK/SK are present.
+        Otherwise returns static token.
+        """
+        if self.ak and self.sk:
+            headers = {
+                "alg": "HS256",
+                "typ": "JWT"
+            }
+            payload = {
+                "iss": self.ak,
+                "exp": int(time.time()) + 1800,  # 30 min validity
+                "nbf": int(time.time()) - 5      # valid from 5s ago
+            }
+            token = jwt.encode(payload, self.sk, headers=headers)
+            # PyJWT 2.x returns str, but just in case
+            if isinstance(token, bytes):
+                token = token.decode('utf-8')
+            return token
+        return self.static_token or ""
 
     async def close(self):
         await self.client.aclose()
 
     async def _request(self, method: str, endpoint: str, **kwargs) -> Dict[str, Any]:
+        # Inject Authorization header dynamically for each request to ensure freshness
+        token = self._get_token()
+        if token:
+            kwargs.setdefault("headers", {})["Authorization"] = f"Bearer {token}"
+        
         try:
             response = await self.client.request(method, endpoint, **kwargs)
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as e:
-            # In a real app, we might want to parse the error response from Kling
-            # and re-raise a custom exception or return the error details.
-            # For now, we let the exception propagate or wrap it.
+            # Re-raise to be handled by routers
             raise e
 
     # --- Video Generation ---

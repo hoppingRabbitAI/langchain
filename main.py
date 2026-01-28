@@ -1,9 +1,11 @@
+import logging
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from app.routers import videos, lipsync, images, tasks
 from app.services.kling_client import get_kling_client
-import logging
 
 # Configure logger
+load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 

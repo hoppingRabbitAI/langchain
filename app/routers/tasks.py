@@ -1,3 +1,4 @@
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Path
 from app.schemas.kling import TaskResponse
 from app.services.kling_client import KlingClient, get_kling_client
@@ -32,5 +33,13 @@ async def get_task_status(
         )
     except HTTPException:
         raise
+    except httpx.HTTPStatusError as e:
+        detail = e.response.text
+        try:
+            detail_json = e.response.json()
+            detail = detail_json.get("message", detail)
+        except Exception:
+            pass
+        raise HTTPException(status_code=e.response.status_code, detail=detail)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -1,27 +1,30 @@
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from app.schemas.kling import (
     Text2VideoRequest, Image2VideoRequest, MultiImage2VideoRequest, 
     MotionControlRequest, VideoExtendRequest, TaskResponse
 )
 from app.services.kling_client import KlingClient, get_kling_client
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/videos", tags=["Video Generation"])
 
 @router.post("/text2video", response_model=TaskResponse)
 async def create_text2video(request: Text2VideoRequest, client: KlingClient = Depends(get_kling_client)):
     try:
-        data = request.model_dump(exclude_none=True)
-        # Handle enum serialization if needed (Pydantic v2 usually handles this well with mode='json')
-        # But here we are dumping to dict for requests. Enums will be members.
-        # We need values. model_dump(mode='json') creates dict with strings.
         data = request.model_dump(mode='json', exclude_none=True)
+        # Log the outgoing payload for debugging
+        logger.info(f"Sending payload to Kling: {data}")
         
         response = await client.create_text2video(data)
         
-        # Check for API logic error (code != 0)
+        # Log response for debugging
+        logger.info(f"Received response from Kling: {response}")
+
         if response.get("code") != 0:
             raise HTTPException(status_code=400, detail=response.get("message", "Unknown error"))
-            
         task_data = response.get("data", {})
         return TaskResponse(
             task_id=task_data.get("task_id", ""),
@@ -29,7 +32,18 @@ async def create_text2video(request: Text2VideoRequest, client: KlingClient = De
         )
     except HTTPException:
         raise
+    except httpx.HTTPStatusError as e:
+        detail = e.response.text
+        try:
+            detail_json = e.response.json()
+            detail = detail_json.get("message", detail)
+            # Log the error detail
+            logger.error(f"Kling API Error (HTTP {e.response.status_code}): {detail}")
+        except Exception:
+            logger.error(f"Kling API Error (HTTP {e.response.status_code}): {detail}")
+        raise HTTPException(status_code=e.response.status_code, detail=detail)
     except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/image2video", response_model=TaskResponse)
@@ -46,6 +60,14 @@ async def create_image2video(request: Image2VideoRequest, client: KlingClient = 
         )
     except HTTPException:
         raise
+    except httpx.HTTPStatusError as e:
+        detail = e.response.text
+        try:
+            detail_json = e.response.json()
+            detail = detail_json.get("message", detail)
+        except Exception:
+            pass
+        raise HTTPException(status_code=e.response.status_code, detail=detail)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -63,6 +85,14 @@ async def create_multi_image(request: MultiImage2VideoRequest, client: KlingClie
         )
     except HTTPException:
         raise
+    except httpx.HTTPStatusError as e:
+        detail = e.response.text
+        try:
+            detail_json = e.response.json()
+            detail = detail_json.get("message", detail)
+        except Exception:
+            pass
+        raise HTTPException(status_code=e.response.status_code, detail=detail)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -80,6 +110,14 @@ async def create_motion_ctrl(request: MotionControlRequest, client: KlingClient 
         )
     except HTTPException:
         raise
+    except httpx.HTTPStatusError as e:
+        detail = e.response.text
+        try:
+            detail_json = e.response.json()
+            detail = detail_json.get("message", detail)
+        except Exception:
+            pass
+        raise HTTPException(status_code=e.response.status_code, detail=detail)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -97,5 +135,13 @@ async def extend_video(request: VideoExtendRequest, client: KlingClient = Depend
         )
     except HTTPException:
         raise
+    except httpx.HTTPStatusError as e:
+        detail = e.response.text
+        try:
+            detail_json = e.response.json()
+            detail = detail_json.get("message", detail)
+        except Exception:
+            pass
+        raise HTTPException(status_code=e.response.status_code, detail=detail)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
